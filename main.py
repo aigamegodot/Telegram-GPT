@@ -1,13 +1,16 @@
 import os
 import requests
+import logging
 from flask import Flask, request
 
 app = Flask(__name__)
 
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHATGPT_API_KEY = os.environ["CHATGPT_API_KEY"]
 
-# Функция общения с OpenAI
 def ask_chatgpt(message):
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -21,22 +24,20 @@ def ask_chatgpt(message):
 
     response = requests.post(url, headers=headers, json=payload)
 
-    # Выводим полный ответ в лог
-    print("=== Ответ от OpenAI ===")
-    print("Status code:", response.status_code)
-    print("Response text:", response.text)
-    print("=======================")
+    logging.info("=== Ответ от OpenAI ===")
+    logging.info(f"Status code: {response.status_code}")
+    logging.info(f"Response text: {response.text}")
+    logging.info("=======================")
 
     try:
         return response.json()["choices"][0]["message"]["content"]
     except Exception:
         return "Произошла ошибка при обращении к ChatGPT."
 
-# Обработка сообщений Telegram
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("Получены данные от Telegram:", data)
+    logging.info(f"Получено сообщение от Telegram: {data}")
 
     message = data["message"].get("text")
     if not message:
@@ -51,12 +52,10 @@ def webhook():
 
     return {"ok": True}
 
-# Проверка доступности
 @app.route("/", methods=["GET"])
 def index():
     return "Бот работает!"
 
-# Запуск Flask
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
