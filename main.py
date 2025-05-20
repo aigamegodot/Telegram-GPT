@@ -1,50 +1,38 @@
 import os
-import requests
 import logging
+import requests
+import google.generativeai as genai
 from flask import Flask, request
 
 app = Flask(__name__)
-
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-CHATGPT_API_KEY = os.environ["CHATGPT_API_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
-def ask_chatgpt(message):
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {CHATGPT_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "gpt-3.5-turbo",
-        "messages": [{"role": "user", "content": message}]
-    }
+# Настройка Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-pro")
 
-    response = requests.post(url, headers=headers, json=payload)
-
-    logging.info("=== Ответ от OpenAI ===")
-    logging.info(f"Status code: {response.status_code}")
-    logging.info(f"Response text: {response.text}")
-    logging.info("=======================")
-
+def ask_gemini(message):
     try:
-        return response.json()["choices"][0]["message"]["content"]
-    except Exception:
-        return "Произошла ошибка при обращении к ChatGPT."
+        response = model.generate_content(message)
+        return response.text
+    except Exception as e:
+        logging.error(f"Gemini error: {e}")
+        return "Ошибка при обращении к Gemini."
 
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
-    logging.info(f"Получено сообщение от Telegram: {data}")
+    logging.info(f"Получено сообщение: {data}")
 
     message = data["message"].get("text")
     if not message:
         return {"ok": True}
 
     chat_id = data["message"]["chat"]["id"]
-    reply = ask_chatgpt(message)
+    reply = ask_gemini(message)
 
     send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": reply}
@@ -54,7 +42,7 @@ def webhook():
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Бот работает!"
+    return "Бот с Gemini работает!"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
