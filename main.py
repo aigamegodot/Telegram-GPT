@@ -7,7 +7,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 CHATGPT_API_KEY = os.environ["CHATGPT_API_KEY"]
 
-# Функция для общения с OpenAI
+# Общение с OpenAI
 def ask_chatgpt(message):
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -27,7 +27,7 @@ def ask_chatgpt(message):
         print("OpenAI error:", response.text)
         return "Произошла ошибка при обращении к ChatGPT."
 
-# Обработка сообщений от Telegram
+# Обработка сообщений Telegram
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
@@ -46,7 +46,12 @@ def webhook():
 
     return {"ok": True}
 
-# Проверка сервера
+# Проверка доступности сервера
 @app.route("/", methods=["GET"])
 def index():
     return "Бот работает!"
+
+# Запуск Flask
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
