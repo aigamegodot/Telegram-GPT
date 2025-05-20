@@ -1,49 +1,65 @@
 import os
 import logging
 import requests
-import google.generativeai as genai
 from flask import Flask, request
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-
-# Настройка Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-pro")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
 
 def ask_gemini(message):
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [{"parts": [{"text": message}]}]
+    }
+
     try:
-        response = model.generate_content(message)
-        return response.text
+        response = requests.post(GEMINI_URL, headers=headers, json=data)
+        logging.info(f"Gemini status: {response.status_code}")
+        logging.info(f"Gemini response: {response.text}")
+
+        if response.status_code == 200:
+            gemini_data = response.json()
+            return gemini_data["candidates"][0]["content"]["parts"][0]["text"]
+        elif response.status_code == 401:
+            return "Ошибка: Неверный API ключ Gemini."
+        elif response.status_code == 429:
+            return "Ошибка: Превышен лимит запросов Gemini."
+        elif response.status_code >= 500:
+            return "Ошибка: Проблема на стороне сервера Gemini. Попробуйте позже."
+        else:
+            return f"Неизвестная ошибка Gemini: {response.status_code}"
     except Exception as e:
-        logging.error(f"Gemini error: {e}")
-        return "Ошибка при обращении к Gemini."
+        logging.error(f"Ошибка при обращении к Gemini: {str(e)}")
+        return "Ошибка при обращении к Gemini. Проверьте логи на Render."
+
+def send_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    requests.post(url, json=payload)
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Telegram Gemini Bot is running."
 
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
-    logging.info(f"Получено сообщение: {data}")
+    logging.info(f"Получено сообщение от Telegram: {data}")
 
-    message = data["message"].get("text")
-    if not message:
-        return {"ok": True}
+    try:
+        chat_id = data["message"]["chat"]["id"]
+        message_text = data["message"]["text"]
+        reply = ask_gemini(message_text)
+    except Exception as e:
+        logging.error(f"Ошибка обработки сообщения: {str(e)}")
+        reply = "Произошла ошибка при обработке сообщения."
 
-    chat_id = data["message"]["chat"]["id"]
-    reply = ask_gemini(message)
-
-    send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": reply}
-    requests.post(send_url, json=payload)
-
-    return {"ok": True}
-
-@app.route("/", methods=["GET"])
-def index():
-    return "Бот с Gemini работает!"
+    send_message(chat_id, reply)
+    return "ok"
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=10000)
