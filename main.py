@@ -6,7 +6,7 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Вставь свои ключи
-TELEGRAM_BOT_TOKEN = "ВСТАВЬ_ТВОЙ_TELEGRAM_BOT_TOKEN"
+TELEGRAM_BOT_TOKEN = "8090532343:AAFM3AosXFH6dY6r3ukPq4LWCOS0Gl9G_Xc"
 DEEPSEEK_API_KEY = "sk-65464c1f4d804f77bb6978f06d7d8895"
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
