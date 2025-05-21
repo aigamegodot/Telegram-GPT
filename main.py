@@ -1,83 +1,86 @@
 import os
 import logging
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request
 
 app = Flask(__name__)
 
-# Настройка логирования
+# Настройка логов
 logging.basicConfig(level=logging.INFO)
 
-# Константы — твои ключи
+# Токены
 TELEGRAM_TOKEN = "8090532343:AAFM3AosXFH6dY6r3ukPq4LWCOS0Gl9G_Xc"
 DEEPSEEK_API_KEY = "sk-65464c1f4d804f77bb6978f06d7d8895"
-DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-# Функция запроса к DeepSeek
-def ask_deepseek(prompt: str) -> str:
+# Главная страница
+@app.route("/")
+def index():
+    return "Бот работает!"
+
+# Вебхук для Telegram
+@app.route("/", methods=["POST"])
+def webhook():
+    data = request.get_json()
+    logging.info(f"Получено сообщение от Telegram: {data}")
+
     try:
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ]
-        }
+        chat_id = data["message"]["chat"]["id"]
+        user_message = data["message"]["text"]
+    except KeyError:
+        return "ok"
 
-        response = requests.post(DEEPSEEK_URL, headers=headers, json=data)
-        logging.info(f"DeepSeek status: {response.status_code}")
+    reply = ask_deepseek(user_message)
+    send_telegram_message(chat_id, reply)
+    return "ok"
+
+# Запрос к DeepSeek
+def ask_deepseek(message):
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "user", "content": message}
+        ]
+    }
+
+    try:
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload)
+        logging.info(f"Ответ от DeepSeek: {response.status_code} — {response.text}")
 
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
+
         elif response.status_code == 401:
-            return "Ошибка: Неверный API-ключ DeepSeek."
+            return "Ошибка: Неверный API ключ DeepSeek."
+
         elif response.status_code == 429:
-            return "Ошибка: Превышен лимит использования DeepSeek."
+            return "Ошибка: Превышен лимит запросов к DeepSeek."
+
         elif response.status_code == 404:
-            return "Ошибка: DeepSeek API не найден. Проверь URL или модель."
+            return "Ошибка: DeepSeek API недоступен или неверный URL."
+
         else:
-            return f"Неизвестная ошибка DeepSeek: {response.status_code}\n{response.text}"
+            return f"Неизвестная ошибка DeepSeek: {response.status_code}"
 
     except Exception as e:
-        logging.error(f"DeepSeek Error: {e}")
+        logging.error(f"Исключение при запросе к DeepSeek: {e}")
         return "Произошла ошибка при обращении к DeepSeek."
 
-# Функция отправки сообщения в Telegram
-def send_message(chat_id, text):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {"chat_id": chat_id, "text": text}
-        response = requests.post(url, json=payload)
-        logging.info(f"Telegram response: {response.status_code}")
-    except Exception as e:
-        logging.error(f"Telegram send_message error: {e}")
+# Ответ пользователю в Telegram
+def send_telegram_message(chat_id, text):
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    requests.post(TELEGRAM_API_URL, json=payload)
 
-# Тестовая страница
-@app.route("/", methods=["GET"])
-def home():
-    return "Бот работает. Отправьте сообщение в Telegram."
-
-# Основной обработчик Webhook
-@app.route("/", methods=["POST"])
-def webhook():
-    try:
-        data = request.get_json()
-        logging.info(f"Получено сообщение: {data}")
-
-        if "message" not in data or "text" not in data["message"]:
-            return jsonify({"status": "no valid message"}), 200
-
-        chat_id = data["message"]["chat"]["id"]
-        user_message = data["message"]["text"]
-
-        reply = ask_deepseek(user_message)
-        send_message(chat_id, reply)
-
-    except Exception as e:
-        logging.error(f"Ошибка обработки запроса: {e}")
-        return jsonify({"status": "error", "detail": str(e)}), 500
-
-    return jsonify({"status": "ok"}), 200
+# Запуск на Render
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
