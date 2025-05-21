@@ -1,65 +1,89 @@
-import os
-import logging
 import requests
 from flask import Flask, request
+import logging
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+# Вставь свои ключи
+TELEGRAM_BOT_TOKEN = "ВСТАВЬ_ТВОЙ_TELEGRAM_BOT_TOKEN"
+DEEPSEEK_API_KEY = "sk-65464c1f4d804f77bb6978f06d7d8895"
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-def ask_gemini(message):
-    headers = {"Content-Type": "application/json"}
+def ask_deepseek(message_text):
+    """Отправка сообщения в DeepSeek и получение ответа."""
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     data = {
-        "contents": [{"parts": [{"text": message}]}]
+        "model": "deepseek-chat",  # Убедись, что модель называется именно так
+        "messages": [{"role": "user", "content": message_text}],
+        "temperature": 0.7
     }
 
     try:
-        response = requests.post(GEMINI_URL, headers=headers, json=data)
-        logging.info(f"Gemini status: {response.status_code}")
-        logging.info(f"Gemini response: {response.text}")
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
+        logging.info(f"DeepSeek Status: {response.status_code}")
+        logging.info(f"DeepSeek Response: {response.text}")
 
         if response.status_code == 200:
-            gemini_data = response.json()
-            return gemini_data["candidates"][0]["content"]["parts"][0]["text"]
-        elif response.status_code == 401:
-            return "Ошибка: Неверный API ключ Gemini."
-        elif response.status_code == 429:
-            return "Ошибка: Превышен лимит запросов Gemini."
-        elif response.status_code >= 500:
-            return "Ошибка: Проблема на стороне сервера Gemini. Попробуйте позже."
-        else:
-            return f"Неизвестная ошибка Gemini: {response.status_code}"
-    except Exception as e:
-        logging.error(f"Ошибка при обращении к Gemini: {str(e)}")
-        return "Ошибка при обращении к Gemini. Проверьте логи на Render."
+            return response.json()["choices"][0]["message"]["content"]
 
-def send_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
-    requests.post(url, json=payload)
+        elif response.status_code == 401:
+            return "Ошибка: Неверный API ключ DeepSeek."
+
+        elif response.status_code == 403:
+            return "Ошибка: Доступ к DeepSeek запрещён."
+
+        elif response.status_code == 404:
+            return "Ошибка: DeepSeek API не найден (возможно, неверный URL или модель)."
+
+        elif response.status_code == 429:
+            return "Ошибка: Превышен лимит использования DeepSeek. Подожди или проверь тариф."
+
+        elif response.status_code == 500:
+            return "Ошибка: Внутренняя ошибка сервера DeepSeek."
+
+        else:
+            return f"Неизвестная ошибка DeepSeek: {response.status_code} — {response.text}"
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Сетевая ошибка при запросе к DeepSeek: {e}")
+        return f"Сетевая ошибка при обращении к DeepSeek: {e}"
 
 @app.route("/", methods=["GET"])
-def home():
-    return "Telegram Gemini Bot is running."
+def index():
+    return "DeepSeek Telegram Bot активен!"
 
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
-    logging.info(f"Получено сообщение от Telegram: {data}")
+    logging.info(f"Запрос от Telegram: {data}")
 
     try:
-        chat_id = data["message"]["chat"]["id"]
-        message_text = data["message"]["text"]
-        reply = ask_gemini(message_text)
-    except Exception as e:
-        logging.error(f"Ошибка обработки сообщения: {str(e)}")
-        reply = "Произошла ошибка при обработке сообщения."
+        if "message" in data and "text" in data["message"]:
+            chat_id = data["message"]["chat"]["id"]
+            user_message = data["message"]["text"]
 
-    send_message(chat_id, reply)
+            reply_text = ask_deepseek(user_message)
+            send_message(chat_id, reply_text)
+        else:
+            logging.warning("Получены данные без текстового сообщения.")
+    except Exception as e:
+        logging.error(f"Ошибка при обработке webhook: {e}")
     return "ok"
+
+def send_message(chat_id, text):
+    """Отправка сообщения пользователю в Telegram."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    try:
+        response = requests.post(url, json=payload)
+        logging.info(f"Отправка сообщения Telegram: {response.status_code}")
+    except Exception as e:
+        logging.error(f"Ошибка отправки в Telegram: {e}")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
